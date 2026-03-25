@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: chatgpt-account-manager-be
+    env: python
+    region: singapore
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB
+        value: chatgpt_manager
+      - key: FLASK_SECRET_KEY
+        generateValue: true
+      - key: FLASK_PORT
+        value: 10000
+      - key: FLASK_DEBUG
+        value: False
+      - key: TEMPMAIL_API_KEY
+        sync: false
+      - key: GOOGLE_SERVICE_ACCOUNT_FILE
+        value: service-account.json
+      - key: GOOGLE_SHEET_ID
+        sync: false
+      - key: GOOGLE_SHEET_NAME
+        value: Bing_1

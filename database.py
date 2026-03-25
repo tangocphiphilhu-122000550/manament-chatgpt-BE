@@ -6,6 +6,7 @@ import os
 from datetime import datetime
 from pymongo import MongoClient
 from dotenv import load_dotenv
+import certifi
 
 load_dotenv()
 
@@ -13,7 +14,26 @@ load_dotenv()
 class DatabaseManager:
     def __init__(self):
         """Khởi tạo kết nối MongoDB"""
-        self.client = MongoClient(os.getenv('MONGODB_URI', 'mongodb://localhost:27017/'))
+        mongodb_uri = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/')
+        
+        # Thêm SSL parameters cho MongoDB Atlas
+        if 'mongodb.net' in mongodb_uri or 'mongodb+srv' in mongodb_uri:
+            # MongoDB Atlas connection với SSL
+            self.client = MongoClient(
+                mongodb_uri,
+                tls=True,
+                tlsAllowInvalidCertificates=False,
+                tlsCAFile=certifi.where(),
+                serverSelectionTimeoutMS=30000,
+                connectTimeoutMS=30000,
+                socketTimeoutMS=30000,
+                retryWrites=True,
+                w='majority'
+            )
+        else:
+            # Local MongoDB
+            self.client = MongoClient(mongodb_uri)
+        
         self.db = self.client[os.getenv('MONGODB_DB', 'chatgpt_manager')]
         
         # Collections
@@ -21,25 +41,31 @@ class DatabaseManager:
         self.sessions = self.db['sessions']
         self.logs = self.db['logs']
         
-        # Tạo indexes
+        # Tạo indexes (với error handling)
         self._create_indexes()
         
         print(f"✅ Đã kết nối MongoDB: {os.getenv('MONGODB_DB')}")
     
     def _create_indexes(self):
         """Tạo indexes cho collections"""
-        # Index cho accounts
-        self.accounts.create_index('email', unique=True)
-        self.accounts.create_index('status')
-        self.accounts.create_index('created_at')
-        
-        # Index cho sessions
-        self.sessions.create_index('account_id')
-        self.sessions.create_index('expires_at')
-        
-        # Index cho logs
-        self.logs.create_index('account_id')
-        self.logs.create_index('created_at')
+        try:
+            # Index cho accounts
+            self.accounts.create_index('email', unique=True)
+            self.accounts.create_index('status')
+            self.accounts.create_index('created_at')
+            
+            # Index cho sessions
+            self.sessions.create_index('account_id')
+            self.sessions.create_index('expires_at')
+            
+            # Index cho logs
+            self.logs.create_index('account_id')
+            self.logs.create_index('created_at')
+            
+            print("✅ Đã tạo indexes")
+        except Exception as e:
+            print(f"⚠️  Warning: Could not create indexes: {e}")
+            # Không raise exception, cho phép app chạy tiếp
     
     # ============================================
     # ACCOUNTS CRUD

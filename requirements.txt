@@ -1,0 +1,12 @@
+# Requirements for ChatGPT API Providers Test
+# Install: pip install -r requirements.txt
+
+curl_cffi==0.5.10
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
+flask
+flask-cors
+pymongo
+python-dotenv>=0.5.0

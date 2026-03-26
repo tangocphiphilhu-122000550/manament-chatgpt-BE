@@ -17,50 +17,58 @@ class DatabaseManager:
         mongodb_uri = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/')
         
         print(f"[DB] Connecting to MongoDB...")
-        print(f"[DB] URI (masked): {mongodb_uri[:20]}...{mongodb_uri[-20:]}")
+        print(f"[DB] URI (masked): {mongodb_uri[:20]}...{mongodb_uri[-20:] if len(mongodb_uri) > 40 else ''}")
         
-        # Thêm SSL parameters cho MongoDB Atlas
-        if 'mongodb.net' in mongodb_uri or 'mongodb+srv' in mongodb_uri:
-            # Thêm SSL params vào URI nếu chưa có
-            if 'tls=true' not in mongodb_uri.lower() and 'ssl=true' not in mongodb_uri.lower():
-                separator = '&' if '?' in mongodb_uri else '?'
-                mongodb_uri += f'{separator}tls=true&tlsAllowInvalidCertificates=true'
-                print(f"[DB] Added SSL params to URI")
-            
-            # MongoDB Atlas connection với SSL
-            print(f"[DB] Connecting to MongoDB Atlas with SSL...")
-            self.client = MongoClient(
-                mongodb_uri,
-                serverSelectionTimeoutMS=30000,
-                connectTimeoutMS=30000,
-                socketTimeoutMS=30000,
-                retryWrites=True,
-                w='majority'
-            )
-        else:
-            # Local MongoDB
-            print(f"[DB] Connecting to local MongoDB...")
-            self.client = MongoClient(mongodb_uri)
-        
-        # Test connection
         try:
+            # Thêm SSL parameters cho MongoDB Atlas
+            if 'mongodb.net' in mongodb_uri or 'mongodb+srv' in mongodb_uri:
+                # Thêm SSL params vào URI nếu chưa có
+                if 'tls=true' not in mongodb_uri.lower() and 'ssl=true' not in mongodb_uri.lower():
+                    separator = '&' if '?' in mongodb_uri else '?'
+                    mongodb_uri += f'{separator}tls=true&tlsAllowInvalidCertificates=true'
+                    print(f"[DB] Added SSL params to URI")
+                
+                # MongoDB Atlas connection với SSL
+                print(f"[DB] Connecting to MongoDB Atlas with SSL...")
+                self.client = MongoClient(
+                    mongodb_uri,
+                    serverSelectionTimeoutMS=5000,  # Giảm timeout để fail fast
+                    connectTimeoutMS=5000,
+                    socketTimeoutMS=5000,
+                    retryWrites=True,
+                    w='majority'
+                )
+            else:
+                # Local MongoDB
+                print(f"[DB] Connecting to local MongoDB...")
+                self.client = MongoClient(mongodb_uri, serverSelectionTimeoutMS=5000)
+            
+            # Test connection
             self.client.admin.command('ping')
             print(f"[DB] ✅ MongoDB connection successful!")
+            
+            self.db = self.client[os.getenv('MONGODB_DB', 'chatgpt_manager')]
+            
+            # Collections
+            self.accounts = self.db['accounts']
+            self.sessions = self.db['sessions']
+            self.logs = self.db['logs']
+            
+            # Tạo indexes (với error handling)
+            self._create_indexes()
+            
+            print(f"✅ Đã kết nối MongoDB: {os.getenv('MONGODB_DB')}")
+            
         except Exception as e:
             print(f"[DB] ❌ MongoDB connection failed: {e}")
-            raise
-        
-        self.db = self.client[os.getenv('MONGODB_DB', 'chatgpt_manager')]
-        
-        # Collections
-        self.accounts = self.db['accounts']
-        self.sessions = self.db['sessions']
-        self.logs = self.db['logs']
-        
-        # Tạo indexes (với error handling)
-        self._create_indexes()
-        
-        print(f"✅ Đã kết nối MongoDB: {os.getenv('MONGODB_DB')}")
+            print(f"[DB] ⚠️  App will start but database operations will fail")
+            
+            # Set dummy values để app không crash
+            self.client = None
+            self.db = None
+            self.accounts = None
+            self.sessions = None
+            self.logs = None
     
     def _create_indexes(self):
         """Tạo indexes cho collections"""
@@ -367,6 +375,9 @@ class DatabaseManager:
     
     def get_statistics(self):
         """Lấy thống kê tổng quan"""
+        if not self.client:
+            raise Exception("MongoDB not connected")
+        
         return {
             'total_accounts': self.count_accounts(),
             'active_accounts': self.count_accounts('active'),

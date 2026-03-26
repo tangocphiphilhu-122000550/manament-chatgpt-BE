@@ -11,6 +11,14 @@ from datetime import datetime
 from bson import ObjectId
 
 from database import db
+
+# Test MongoDB connection
+try:
+    db.client.admin.command('ping')
+    print("✅ MongoDB connected successfully")
+except Exception as e:
+    print(f"⚠️  MongoDB connection failed: {e}")
+    print("⚠️  App will start but database operations will fail")
 from login_chatgpt_with_otp import ChatGPTLoginWithOTP
 
 # Import Google Sheet Manager

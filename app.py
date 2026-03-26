@@ -64,6 +64,23 @@ def mongo_to_dict(doc):
 
 
 # ============================================
+# ROUTES - Health Check
+# ============================================
+
+@app.route('/health', methods=['GET', 'HEAD'])
+def health_check():
+    """Health check endpoint for monitoring services"""
+    if request.method == 'HEAD':
+        return '', 200
+    
+    return jsonify({
+        'status': 'healthy',
+        'service': 'chatgpt-account-manager',
+        'timestamp': datetime.utcnow().isoformat()
+    }), 200
+
+
+# ============================================
 # ROUTES - Pages
 # ============================================
 

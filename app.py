@@ -1104,10 +1104,13 @@ def update_google_sheet_status(email, sale_status=None, ban_status=None):
 @app.route('/api/accounts/<account_id>/password', methods=['GET'])
 def get_account_password(account_id):
     """
-    Lấy password của account từ Google Sheet (cột B)
+    Lấy password và dates của account từ Google Sheet (cột B, C, D)
     """
     try:
+        print(f"[PASSWORD API] Getting password for account_id: {account_id}")
+        
         if not GOOGLE_SHEETS_AVAILABLE:
+            print(f"[PASSWORD API] ❌ Google Sheets API not available")
             return jsonify({
                 'success': False,
                 'error': 'Google Sheets API not available'
@@ -1116,53 +1119,94 @@ def get_account_password(account_id):
         # Lấy account
         account = db.get_account_by_id(account_id)
         if not account:
+            print(f"[PASSWORD API] ❌ Account not found")
             return jsonify({'success': False, 'error': 'Account not found'}), 404
         
         email = account['email']
+        print(f"[PASSWORD API] Email: {email}")
         
         service_account_file = os.getenv('GOOGLE_SERVICE_ACCOUNT_FILE', 'service-account.json')
+        service_account_json = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON')
         sheet_id = os.getenv('GOOGLE_SHEET_ID')
-        sheet_name = os.getenv('GOOGLE_SHEET_NAME', 'Bảng_1')
+        sheet_name = os.getenv('GOOGLE_SHEET_NAME', 'Bing_1')
         
-        if not service_account_file or not sheet_id:
+        print(f"[PASSWORD API] Config: file={service_account_file}, has_json_env={bool(service_account_json)}, sheet_id={sheet_id[:20] if sheet_id else None}..., sheet_name={sheet_name}")
+        
+        if not sheet_id:
+            print(f"[PASSWORD API] ❌ Missing sheet_id")
             return jsonify({
                 'success': False,
-                'error': 'Missing service_account_file or sheet_id in .env'
+                'error': 'Missing sheet_id in .env'
             }), 400
         
         # Khởi tạo Google Sheets API
         SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
-        credentials = service_account.Credentials.from_service_account_file(
-            service_account_file, scopes=SCOPES
-        )
+        
+        # Ưu tiên dùng JSON từ environment variable
+        if service_account_json:
+            print(f"[PASSWORD API] Using credentials from GOOGLE_SERVICE_ACCOUNT_JSON env var")
+            import json
+            credentials_dict = json.loads(service_account_json)
+            credentials = service_account.Credentials.from_service_account_info(
+                credentials_dict, scopes=SCOPES
+            )
+        elif os.path.exists(service_account_file):
+            print(f"[PASSWORD API] Using credentials from file: {service_account_file}")
+            credentials = service_account.Credentials.from_service_account_file(
+                service_account_file, scopes=SCOPES
+            )
+        else:
+            print(f"[PASSWORD API] ❌ No credentials found")
+            return jsonify({
+                'success': False,
+                'error': 'No Google service account credentials found. Set GOOGLE_SERVICE_ACCOUNT_JSON env var or provide service-account.json file'
+            }), 500
         service = build('sheets', 'v4', credentials=credentials)
         
-        # Đọc cột A và B để tìm email và password
-        range_name = f'{sheet_name}!A2:B1000'
+        print(f"[PASSWORD API] Reading sheet range: {sheet_name}!A2:D1000")
+        
+        # Đọc cột A, B, C, D để tìm email và lấy password, created_at, updated_at
+        range_name = f'{sheet_name}!A2:D1000'
         result = service.spreadsheets().values().get(
             spreadsheetId=sheet_id,
             range=range_name
         ).execute()
         
         values = result.get('values', [])
+        print(f"[PASSWORD API] Found {len(values)} rows in sheet")
         
         # Tìm email trong sheet
         password = None
-        for row in values:
+        created_at = None
+        updated_at = None
+        
+        for i, row in enumerate(values):
             if row and len(row) > 0 and row[0].strip() == email:
-                # Tìm thấy email, lấy password từ cột B
+                print(f"[PASSWORD API] ✅ Found email at row {i+2}")
+                # Tìm thấy email
                 if len(row) > 1:
                     password = row[1].strip()
+                    print(f"[PASSWORD API] Password: {password[:3]}***")
+                if len(row) > 2:
+                    created_at = row[2].strip()
+                    print(f"[PASSWORD API] Created At: {created_at}")
+                if len(row) > 3:
+                    updated_at = row[3].strip()
+                    print(f"[PASSWORD API] Updated At: {updated_at}")
                 break
         
         if password:
+            print(f"[PASSWORD API] ✅ Success")
             return jsonify({
                 'success': True,
                 'data': {
-                    'password': password
+                    'password': password,
+                    'created_at': created_at,
+                    'updated_at': updated_at
                 }
             })
         else:
+            print(f"[PASSWORD API] ❌ Email not found in sheet")
             return jsonify({
                 'success': False,
                 'error': 'Password not found in Google Sheet'
@@ -1170,10 +1214,13 @@ def get_account_password(account_id):
         
     except Exception as e:
         import traceback
+        error_trace = traceback.format_exc()
+        print(f"[PASSWORD API] ❌ Exception: {e}")
+        print(error_trace)
         return jsonify({
             'success': False,
             'error': str(e),
-            'traceback': traceback.format_exc()
+            'traceback': error_trace
         }), 500
 
 
@@ -1598,3 +1645,4 @@ if __name__ == '__main__':
     print("="*70)
     
     app.run(host='0.0.0.0', port=port, debug=debug)
+

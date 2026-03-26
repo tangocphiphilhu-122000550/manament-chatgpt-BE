@@ -47,6 +47,34 @@ class JSONEncoder(json.JSONEncoder):
 
 app.json_encoder = JSONEncoder
 
+# Helper function to get Google Sheets credentials
+def get_google_sheets_credentials():
+    """
+    Get Google Sheets credentials from environment variable or file
+    Returns credentials object or None if not available
+    """
+    service_account_json = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON')
+    service_account_file = os.getenv('GOOGLE_SERVICE_ACCOUNT_FILE', 'service-account.json')
+    
+    SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
+    
+    # Ưu tiên dùng JSON từ environment variable
+    if service_account_json:
+        print(f"[GSHEET] Using credentials from GOOGLE_SERVICE_ACCOUNT_JSON env var")
+        import json
+        credentials_dict = json.loads(service_account_json)
+        return service_account.Credentials.from_service_account_info(
+            credentials_dict, scopes=SCOPES
+        )
+    elif os.path.exists(service_account_file):
+        print(f"[GSHEET] Using credentials from file: {service_account_file}")
+        return service_account.Credentials.from_service_account_file(
+            service_account_file, scopes=SCOPES
+        )
+    else:
+        print(f"[GSHEET] ❌ No credentials found")
+        return None
+
 # Helper function to convert MongoDB documents to JSON-safe format
 def mongo_to_dict(doc):
     """Convert MongoDB document to JSON-safe dict"""
@@ -1038,14 +1066,14 @@ def update_google_sheet_status(email, sale_status=None, ban_status=None):
         return
     
     try:
-        service_account_file = os.getenv('GOOGLE_SERVICE_ACCOUNT_FILE', 'service-account.json')
-        sheet_id = os.getenv('GOOGLE_SHEET_ID')
-        sheet_name = os.getenv('GOOGLE_SHEET_NAME', 'Bảng_1')
+        credentials = get_google_sheets_credentials()
+        if not credentials:
+            print(f"⚠️  No Google Sheets credentials available")
+            return
         
-        SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
-        credentials = service_account.Credentials.from_service_account_file(
-            service_account_file, scopes=SCOPES
-        )
+        sheet_id = os.getenv('GOOGLE_SHEET_ID')
+        sheet_name = os.getenv('GOOGLE_SHEET_NAME', 'Bing_1')
+        
         service = build('sheets', 'v4', credentials=credentials)
         
         # Tìm row của email trong sheet
@@ -1236,21 +1264,22 @@ def gsheet_check():
                 'error': 'Google Sheets API not available'
             }), 500
         
-        service_account_file = os.getenv('GOOGLE_SERVICE_ACCOUNT_FILE', 'service-account.json')
-        sheet_id = os.getenv('GOOGLE_SHEET_ID')
-        sheet_name = os.getenv('GOOGLE_SHEET_NAME', 'Bảng_1')
-        
-        if not service_account_file or not sheet_id:
+        credentials = get_google_sheets_credentials()
+        if not credentials:
             return jsonify({
                 'success': False,
-                'error': 'Missing service_account_file or sheet_id in .env'
+                'error': 'No Google Sheets credentials found. Set GOOGLE_SERVICE_ACCOUNT_JSON env var or provide service-account.json file'
+            }), 500
+        
+        sheet_id = os.getenv('GOOGLE_SHEET_ID')
+        sheet_name = os.getenv('GOOGLE_SHEET_NAME', 'Bing_1')
+        
+        if not sheet_id:
+            return jsonify({
+                'success': False,
+                'error': 'Missing sheet_id in .env'
             }), 400
         
-        # Khởi tạo Google Sheets API
-        SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
-        credentials = service_account.Credentials.from_service_account_file(
-            service_account_file, scopes=SCOPES
-        )
         service = build('sheets', 'v4', credentials=credentials)
         
         # Đọc 100 dòng đầu từ cột A (chỉ cần email)
@@ -1328,27 +1357,28 @@ def gsheet_login_batch():
                 'error': 'Google Sheets API not available'
             }), 500
         
+        credentials = get_google_sheets_credentials()
+        if not credentials:
+            return jsonify({
+                'success': False,
+                'error': 'No Google Sheets credentials found. Set GOOGLE_SERVICE_ACCOUNT_JSON env var or provide service-account.json file'
+            }), 500
+        
         data = request.json
         
-        service_account_file = data.get('service_account_file') or os.getenv('GOOGLE_SERVICE_ACCOUNT_FILE', 'service-account.json')
         sheet_id = data.get('sheet_id') or os.getenv('GOOGLE_SHEET_ID')
-        sheet_name = data.get('sheet_name') or os.getenv('GOOGLE_SHEET_NAME', 'Bảng_1')
+        sheet_name = data.get('sheet_name') or os.getenv('GOOGLE_SHEET_NAME', 'Bing_1')
         start_row = data.get('start_row', 2)
         max_rows = data.get('max_rows', 100)
         password = data.get('password', '171004Minh@@')
         account_type = data.get('account_type', 'Team')
         
-        if not service_account_file or not sheet_id:
+        if not sheet_id:
             return jsonify({
                 'success': False,
-                'error': 'Missing service_account_file or sheet_id'
+                'error': 'Missing sheet_id'
             }), 400
         
-        # Khởi tạo Google Sheets API
-        SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
-        credentials = service_account.Credentials.from_service_account_file(
-            service_account_file, scopes=SCOPES
-        )
         service = build('sheets', 'v4', credentials=credentials)
         
         # Đọc email từ cột A (CHỈ cột A)

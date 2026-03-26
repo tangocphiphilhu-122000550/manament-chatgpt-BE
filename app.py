@@ -1323,7 +1323,7 @@ def gsheet_check():
             'config': {
                 'sheet_id': sheet_id,
                 'sheet_name': sheet_name,
-                'service_account_file': service_account_file
+                'credentials_source': 'environment_variable' if os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON') else 'file'
             },
             'data': {
                 'total_emails': len(emails_in_sheet),

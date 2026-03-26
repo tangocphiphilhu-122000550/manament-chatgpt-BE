@@ -16,14 +16,19 @@ class DatabaseManager:
         """Khởi tạo kết nối MongoDB"""
         mongodb_uri = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/')
         
+        print(f"[DB] Connecting to MongoDB...")
+        print(f"[DB] URI (masked): {mongodb_uri[:20]}...{mongodb_uri[-20:]}")
+        
         # Thêm SSL parameters cho MongoDB Atlas
         if 'mongodb.net' in mongodb_uri or 'mongodb+srv' in mongodb_uri:
             # Thêm SSL params vào URI nếu chưa có
             if 'tls=true' not in mongodb_uri.lower() and 'ssl=true' not in mongodb_uri.lower():
                 separator = '&' if '?' in mongodb_uri else '?'
                 mongodb_uri += f'{separator}tls=true&tlsAllowInvalidCertificates=true'
+                print(f"[DB] Added SSL params to URI")
             
             # MongoDB Atlas connection với SSL
+            print(f"[DB] Connecting to MongoDB Atlas with SSL...")
             self.client = MongoClient(
                 mongodb_uri,
                 serverSelectionTimeoutMS=30000,
@@ -34,7 +39,16 @@ class DatabaseManager:
             )
         else:
             # Local MongoDB
+            print(f"[DB] Connecting to local MongoDB...")
             self.client = MongoClient(mongodb_uri)
+        
+        # Test connection
+        try:
+            self.client.admin.command('ping')
+            print(f"[DB] ✅ MongoDB connection successful!")
+        except Exception as e:
+            print(f"[DB] ❌ MongoDB connection failed: {e}")
+            raise
         
         self.db = self.client[os.getenv('MONGODB_DB', 'chatgpt_manager')]
         

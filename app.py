@@ -108,7 +108,14 @@ def get_statistics():
         stats = db.get_statistics()
         return jsonify({'success': True, 'data': stats})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        import traceback
+        error_detail = {
+            'error': str(e),
+            'type': type(e).__name__,
+            'traceback': traceback.format_exc()
+        }
+        print(f"❌ Statistics API Error: {error_detail}")
+        return jsonify({'success': False, 'error': str(e), 'detail': error_detail}), 500
 
 
 # ============================================

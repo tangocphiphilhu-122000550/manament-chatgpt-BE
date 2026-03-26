@@ -91,10 +91,25 @@ def health_check():
 @app.route('/')
 def index():
     """API root endpoint"""
+    # Check MongoDB status
+    mongodb_status = "connected" if db.client else "disconnected"
+    mongodb_error = None
+    
+    if not db.client:
+        mongodb_error = "MongoDB connection failed - check MONGODB_URI environment variable"
+    
     return jsonify({
         'service': 'ChatGPT Account Manager API',
         'version': '1.0.0',
         'status': 'running',
+        'mongodb': {
+            'status': mongodb_status,
+            'error': mongodb_error
+        },
+        'environment': {
+            'MONGODB_URI_set': bool(os.getenv('MONGODB_URI')),
+            'MONGODB_DB': os.getenv('MONGODB_DB', 'not set')
+        },
         'endpoints': {
             'health': '/health',
             'statistics': '/api/statistics',

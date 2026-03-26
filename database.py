@@ -23,11 +23,15 @@ class DatabaseManager:
             # Đơn giản hóa connection - chỉ dùng URI với minimal params
             if 'mongodb+srv' in mongodb_uri:
                 # MongoDB Atlas với SRV (cần dnspython)
-                print(f"[DB] Using SRV connection...")
+                print(f"[DB] Using SRV connection with SSL bypass...")
                 
-                # Thêm params vào URI
+                # Thêm params vào URI để bypass SSL verification
                 if '?' not in mongodb_uri:
-                    mongodb_uri += '?retryWrites=true&w=majority'
+                    mongodb_uri += '?retryWrites=true&w=majority&tls=true&tlsAllowInvalidCertificates=true'
+                elif 'tlsAllowInvalidCertificates' not in mongodb_uri:
+                    mongodb_uri += '&tls=true&tlsAllowInvalidCertificates=true'
+                
+                print(f"[DB] Connection params: tls=true, tlsAllowInvalidCertificates=true")
                 
                 self.client = MongoClient(
                     mongodb_uri,
@@ -36,10 +40,15 @@ class DatabaseManager:
                 )
             elif 'mongodb.net' in mongodb_uri:
                 # MongoDB Atlas không SRV
-                print(f"[DB] Using standard connection...")
+                print(f"[DB] Using standard connection with SSL bypass...")
+                
+                if '?' not in mongodb_uri:
+                    mongodb_uri += '?tls=true&tlsAllowInvalidCertificates=true'
+                elif 'tlsAllowInvalidCertificates' not in mongodb_uri:
+                    mongodb_uri += '&tls=true&tlsAllowInvalidCertificates=true'
+                
                 self.client = MongoClient(
                     mongodb_uri,
-                    tls=True,
                     serverSelectionTimeoutMS=10000,
                     connectTimeoutMS=10000
                 )
@@ -49,6 +58,7 @@ class DatabaseManager:
                 self.client = MongoClient(mongodb_uri, serverSelectionTimeoutMS=5000)
             
             # Test connection
+            print(f"[DB] Testing connection with ping...")
             self.client.admin.command('ping')
             print(f"[DB] ✅ MongoDB connection successful!")
             
@@ -66,6 +76,7 @@ class DatabaseManager:
             
         except Exception as e:
             print(f"[DB] ❌ MongoDB connection failed: {e}")
+            print(f"[DB] Error type: {type(e).__name__}")
             print(f"[DB] ⚠️  App will start but database operations will fail")
             import traceback
             traceback.print_exc()

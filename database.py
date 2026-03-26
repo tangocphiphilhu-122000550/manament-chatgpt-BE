@@ -17,30 +17,35 @@ class DatabaseManager:
         mongodb_uri = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/')
         
         print(f"[DB] Connecting to MongoDB...")
-        print(f"[DB] URI (masked): {mongodb_uri[:20]}...{mongodb_uri[-20:] if len(mongodb_uri) > 40 else ''}")
+        print(f"[DB] URI type: {'Atlas (SRV)' if 'mongodb+srv' in mongodb_uri else 'Atlas' if 'mongodb.net' in mongodb_uri else 'Local'}")
         
         try:
-            # Thêm SSL parameters cho MongoDB Atlas
-            if 'mongodb.net' in mongodb_uri or 'mongodb+srv' in mongodb_uri:
-                # Thêm SSL params vào URI nếu chưa có
-                if 'tls=true' not in mongodb_uri.lower() and 'ssl=true' not in mongodb_uri.lower():
-                    separator = '&' if '?' in mongodb_uri else '?'
-                    mongodb_uri += f'{separator}tls=true&tlsAllowInvalidCertificates=true'
-                    print(f"[DB] Added SSL params to URI")
+            # Đơn giản hóa connection - chỉ dùng URI với minimal params
+            if 'mongodb+srv' in mongodb_uri:
+                # MongoDB Atlas với SRV (cần dnspython)
+                print(f"[DB] Using SRV connection...")
                 
-                # MongoDB Atlas connection với SSL
-                print(f"[DB] Connecting to MongoDB Atlas with SSL...")
+                # Thêm params vào URI
+                if '?' not in mongodb_uri:
+                    mongodb_uri += '?retryWrites=true&w=majority'
+                
                 self.client = MongoClient(
                     mongodb_uri,
-                    serverSelectionTimeoutMS=5000,  # Giảm timeout để fail fast
-                    connectTimeoutMS=5000,
-                    socketTimeoutMS=5000,
-                    retryWrites=True,
-                    w='majority'
+                    serverSelectionTimeoutMS=10000,
+                    connectTimeoutMS=10000
+                )
+            elif 'mongodb.net' in mongodb_uri:
+                # MongoDB Atlas không SRV
+                print(f"[DB] Using standard connection...")
+                self.client = MongoClient(
+                    mongodb_uri,
+                    tls=True,
+                    serverSelectionTimeoutMS=10000,
+                    connectTimeoutMS=10000
                 )
             else:
                 # Local MongoDB
-                print(f"[DB] Connecting to local MongoDB...")
+                print(f"[DB] Using local connection...")
                 self.client = MongoClient(mongodb_uri, serverSelectionTimeoutMS=5000)
             
             # Test connection
@@ -62,6 +67,8 @@ class DatabaseManager:
         except Exception as e:
             print(f"[DB] ❌ MongoDB connection failed: {e}")
             print(f"[DB] ⚠️  App will start but database operations will fail")
+            import traceback
+            traceback.print_exc()
             
             # Set dummy values để app không crash
             self.client = None

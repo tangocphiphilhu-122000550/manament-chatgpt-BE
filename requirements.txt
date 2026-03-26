@@ -8,6 +8,7 @@ google-auth-httplib2
 google-api-python-client
 flask
 flask-cors
-pymongo[srv]
+pymongo[srv]==4.6.0
+dnspython==2.4.2
 python-dotenv>=0.5.0
 certifi

@@ -18,12 +18,14 @@ class DatabaseManager:
         
         # Thêm SSL parameters cho MongoDB Atlas
         if 'mongodb.net' in mongodb_uri or 'mongodb+srv' in mongodb_uri:
+            # Thêm SSL params vào URI nếu chưa có
+            if 'tls=true' not in mongodb_uri.lower() and 'ssl=true' not in mongodb_uri.lower():
+                separator = '&' if '?' in mongodb_uri else '?'
+                mongodb_uri += f'{separator}tls=true&tlsAllowInvalidCertificates=true'
+            
             # MongoDB Atlas connection với SSL
             self.client = MongoClient(
                 mongodb_uri,
-                tls=True,
-                tlsAllowInvalidCertificates=False,
-                tlsCAFile=certifi.where(),
                 serverSelectionTimeoutMS=30000,
                 connectTimeoutMS=30000,
                 socketTimeoutMS=30000,

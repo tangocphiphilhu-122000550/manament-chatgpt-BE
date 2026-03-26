@@ -80,24 +80,21 @@ def health_check():
     }), 200
 
 
-# ============================================
-# ROUTES - Pages
-# ============================================
-
 @app.route('/')
 def index():
-    """Dashboard page"""
-    return render_template('index.html')
-
-@app.route('/accounts')
-def accounts_page():
-    """Accounts management page"""
-    return render_template('accounts.html')
-
-@app.route('/login-account')
-def login_account_page():
-    """Login new account page"""
-    return render_template('login.html')
+    """API root endpoint"""
+    return jsonify({
+        'service': 'ChatGPT Account Manager API',
+        'version': '1.0.0',
+        'status': 'running',
+        'endpoints': {
+            'health': '/health',
+            'statistics': '/api/statistics',
+            'accounts': '/api/accounts',
+            'login': '/api/login',
+            'logs': '/api/logs'
+        }
+    }), 200
 
 
 # ============================================

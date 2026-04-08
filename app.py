@@ -938,7 +938,7 @@ def get_logs():
 
 @app.route('/api/accounts/<account_id>/check-ban', methods=['POST'])
 def check_account_ban(account_id):
-    """Kiểm tra account có bị ban không bằng cách login đến bước validate OTP"""
+    """Kiểm tra account có bị ban không bằng cách login đến bước validate OTP và cập nhật session mới"""
     try:
         # Lấy account
         account = db.get_account_by_id(account_id)
@@ -949,29 +949,50 @@ def check_account_ban(account_id):
         
         db.add_log(account_id, 'check_ban_started', f'Starting ban check for {email}')
         
-        # Khởi tạo login bot
-        login_bot = ChatGPTLoginWithOTP(email=email)
+        # Retry logic: Tối đa 2 lần (1 lần đầu + 1 lần retry)
+        max_retries = 2
         
-        # Step 1-3: Gửi OTP
-        if not login_bot.step1_get_providers():
-            return jsonify({'success': False, 'error': 'Failed to get providers'}), 500
-        
-        if not login_bot.step2_get_csrf():
-            return jsonify({'success': False, 'error': 'Failed to get CSRF token'}), 500
-        
-        if not login_bot.step3_signin():
-            return jsonify({'success': False, 'error': 'Failed to signin'}), 500
-        
-        db.add_log(account_id, 'check_ban_otp_sent', 'OTP sent, waiting for email...')
-        
-        # Step 4: Tự động lấy OTP
-        otp_code = login_bot.step4_get_otp(max_attempts=24)
-        
-        if not otp_code:
-            db.add_log(account_id, 'check_ban_failed', 'Failed to get OTP from email', 'error')
-            return jsonify({'success': False, 'error': 'Failed to get OTP from email'}), 500
-        
-        db.add_log(account_id, 'check_ban_otp_received', f'OTP received: {otp_code}')
+        for retry_attempt in range(max_retries):
+            if retry_attempt > 0:
+                db.add_log(account_id, 'check_ban_retry', f'Retry attempt {retry_attempt}/{max_retries - 1}')
+            
+            # Khởi tạo login bot
+            login_bot = ChatGPTLoginWithOTP(email=email)
+            
+            # Step 1-3: Gửi OTP
+            if not login_bot.step1_get_providers():
+                if retry_attempt < max_retries - 1:
+                    continue
+                return jsonify({'success': False, 'error': 'Failed to get providers'}), 500
+            
+            if not login_bot.step2_get_csrf():
+                if retry_attempt < max_retries - 1:
+                    continue
+                return jsonify({'success': False, 'error': 'Failed to get CSRF token'}), 500
+            
+            if not login_bot.step3_signin():
+                if retry_attempt < max_retries - 1:
+                    continue
+                return jsonify({'success': False, 'error': 'Failed to signin'}), 500
+            
+            db.add_log(account_id, 'check_ban_otp_sent', f'OTP sent (attempt {retry_attempt + 1}), waiting for email...')
+            
+            # Step 4: Tự động lấy OTP
+            otp_code = login_bot.step4_get_otp(max_attempts=24)
+            
+            if not otp_code:
+                if retry_attempt < max_retries - 1:
+                    db.add_log(account_id, 'check_ban_otp_not_found', f'OTP not found in attempt {retry_attempt + 1}, retrying...', 'warning')
+                    import time
+                    time.sleep(5)  # Đợi 5s trước khi retry
+                    continue
+                else:
+                    db.add_log(account_id, 'check_ban_failed', 'Failed to get OTP from email after retries', 'error')
+                    return jsonify({'success': False, 'error': 'Failed to get OTP from email'}), 500
+            
+            # Tìm thấy OTP, thoát khỏi retry loop
+            db.add_log(account_id, 'check_ban_otp_received', f'OTP received: {otp_code}')
+            break
         
         # Step 5: Validate OTP (đây là bước kiểm tra ban)
         validate_result = login_bot.step5_validate_otp(otp_code)
@@ -997,7 +1018,49 @@ def check_account_ban(account_id):
             return jsonify({'success': False, 'error': 'Invalid OTP'}), 400
         
         # OTP hợp lệ → Account không bị ban
-        db.add_log(account_id, 'check_ban_completed', 'Account is NOT banned')
+        # Tiếp tục lấy session mới và cập nhật vào DB
+        db.add_log(account_id, 'check_ban_completed', 'Account is NOT banned, updating session...')
+        
+        # Step 6: Lấy session mới
+        if not login_bot.step6_get_session():
+            db.add_log(account_id, 'check_ban_session_failed', 'Failed to get session', 'warning')
+        else:
+            # Lưu session mới vào DB
+            session_data = {
+                'access_token': login_bot.access_token,
+                'user_id': login_bot.user_id,
+                'account_id': login_bot.account_id
+            }
+            
+            # Extract cookies
+            cookies = {}
+            try:
+                if hasattr(login_bot.session.cookies, 'jar'):
+                    for cookie in login_bot.session.cookies.jar:
+                        cookie_key = cookie.name
+                        if cookie.domain:
+                            cookie_key = f"{cookie.name}@{cookie.domain}"
+                        cookies[cookie_key] = cookie.value
+                elif hasattr(login_bot.session.cookies, '_cookies'):
+                    for domain, paths in login_bot.session.cookies._cookies.items():
+                        for path, names in paths.items():
+                            for name, cookie in names.items():
+                                cookie_key = f"{name}@{domain}"
+                                cookies[cookie_key] = cookie.value
+                else:
+                    cookie_list = list(login_bot.session.cookies)
+                    for cookie in cookie_list:
+                        cookie_key = cookie.name
+                        if hasattr(cookie, 'domain') and cookie.domain:
+                            cookie_key = f"{cookie.name}@{cookie.domain}"
+                        cookies[cookie_key] = cookie.value
+            except Exception as e:
+                print(f"⚠️  Error extracting cookies: {e}")
+                cookies = {}
+            
+            # Lưu session mới vào DB
+            db.save_session(account_id, session_data, cookies)
+            db.add_log(account_id, 'check_ban_session_updated', 'Session updated successfully')
         
         # Nếu account đang ở trạng thái banned nhưng check thấy OK → update lại
         if account.get('status') == 'banned':
@@ -1009,7 +1072,7 @@ def check_account_ban(account_id):
             'data': {
                 'is_banned': False,
                 'status': 'active',
-                'message': 'Account is active and not banned'
+                'message': 'Account is active and session updated'
             }
         })
         
